@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red Ball AI // v7.5</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: #0a0a0a;
+            background-image: linear-gradient(rgba(255, 0, 0, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 0, 0, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px; font-family: 'Courier New', monospace; height: 100vh; overflow: hidden;
+            display: flex; flex-direction: column; color: #e0e0e0; user-select: none; transition: background-color 0.5s;
+        }
+        body.dimmed { background-color: #050505; }
+        body.theme-autumn { background-color: #1a0f00; background-image: radial-gradient(circle at 50% 50%, #2a1a00 0%, #0a0500 100%); }
+        body.theme-winter { background-color: #0a1520; background-image: radial-gradient(circle at 50% 50%, #152535 0%, #050a10 100%); }
+        body.theme-spring { background-color: #0a1a0f; background-image: radial-gradient(circle at 50% 50%, #152a1a 0%, #050a05 100%); }
+        body.theme-summer { background-color: #1a1500; background-image: radial-gradient(circle at 50% 50%, #2a2500 0%, #0a0a00 100%); }
+
+        #flash-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 0, 0, 0.4); pointer-events: none; opacity: 0; z-index: 100; transition: opacity 0.1s; }
+        #flash-overlay.active { opacity: 1; }
+        
+        .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        .blasted { animation: shake 0.1s infinite !important; }
+        @keyframes shake { 10%, 90% { transform: translate3d(-2px, 0, 0); } 20%, 80% { transform: translate3d(4px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-6px, 0, 0); } 40%, 60% { transform: translate3d(6px, 0, 0); } }
+
+        /* Wall Smash Wobble */
+        .wobble { animation: wobble 0.5s ease-out; }
+        @keyframes wobble {
+            0% { transform: scaleX(1.3) scaleY(0.7); }
+            25% { transform: scaleX(0.8) scaleY(1.2); }
+            50% { transform: scaleX(1.1) scaleY(0.9); }
+            75% { transform: scaleX(0.95) scaleY(1.05); }
+            100% { transform: scaleX(1) scaleY(1); }
+        }
+
+        #status-bar { width: 100%; padding: 10px 20px; background: #0f0f0f; border-bottom: 1px solid #222; font-size: 11px; color: #555; display: flex; justify-content: space-between; letter-spacing: 2px; z-index: 10; }
+        #status-dot { width: 6px; height: 6px; background: #00ff41; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 8px #00ff41; }
+        #aggression-container { display: flex; align-items: center; gap: 10px; }
+        #aggression-bar-bg { width: 120px; height: 8px; background: #222; border-radius: 4px; overflow: hidden; border: 1px solid #333; }
+        #aggression-bar-fill { height: 100%; width: 0%; background: #ff3333; transition: width 0.3s ease, background 0.3s; }
+        #aggression-bar-fill.max { animation: pulseRed 0.5s infinite alternate; }
+        #aggression-bar-fill.melting { background: #00ffff !important; box-shadow: 0 0 10px #00ffff; }
+        @keyframes pulseRed { 0% { background: #ff0000; box-shadow: 0 0 10px #ff0000; } 100% { background: #ff4444; box-shadow: 0 0 20px #ff0000; } }
+
+        #left-warning, #controls-hint { position: fixed; top: 50%; transform: translateY(-50%); width: 200px; padding: 15px; background: rgba(20, 20, 20, 0.9); font-size: 10px; line-height: 1.6; z-index: 5; pointer-events: none; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #left-warning { left: 20px; border: 1px solid #331111; border-left: 3px solid #ff3333; color: #ff6b6b; }
+        #left-warning::before { content: ' WARNING'; display: block; font-weight: bold; margin-bottom: 8px; color: #ff3333; letter-spacing: 1px; }
+        #controls-hint { right: 20px; border: 1px solid #113311; border-right: 3px solid #00ff41; color: #6bffb8; }
+        #controls-hint::before { content: ' ACTIONS'; display: block; font-weight: bold; margin-bottom: 8px; color: #00ff41; letter-spacing: 1px; }
+
+        #bed { position: absolute; width: 200px; height: 70px; background: linear-gradient(to bottom, #990000, #660000); border-radius: 15px; bottom: -50px; left: 50%; transform: translateX(-50%); z-index: -1; display: none; box-shadow: 0 15px 30px rgba(0,0,0,0.8), inset 0 5px 10px rgba(255,0,0,0.3); border: 2px solid #440000; }
+        #bed::before { content: ''; position: absolute; top: -15px; left: 20px; width: 50px; height: 25px; background: #ff4444; border-radius: 8px; box-shadow: 0 5px 10px rgba(0,0,0,0.5); }
+        #bed::after { content: ''; position: absolute; top: 0; right: 0; width: 60px; height: 100%; background: #aa0000; border-radius: 0 15px 15px 0; border-left: 2px solid #550000; }
+
+        #ball-container { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); z-index: 20; cursor: grab; transition: transform 0.1s ease-out; }
+        #ball-container:active { cursor: grabbing; }
+        #red-ball { width: 120px; height: 120px; background: radial-gradient(circle at 35% 35%, #ff3333, #800000); border-radius: 50%; position: relative; box-shadow: 0 0 60px rgba(255, 0, 0, 0.2), 0 10px 30px rgba(0,0,0,0.6); transition: box-shadow 0.3s, transform 0.1s; }
+        #red-ball.dragging { box-shadow: 0 0 80px rgba(255, 0, 0, 0.5), 0 15px 40px rgba(0,0,0,0.8); }
+        #red-ball.punched { transform: scale(1.2, 0.6) !important; }
+        #red-ball.patted { box-shadow: 0 0 100px rgba(255, 100, 100, 0.8), 0 0 40px rgba(255, 255, 255, 0.4); transform: scale(1.1); }
+        #red-ball.sleeping { filter: brightness(0.6); }
+        #red-ball.sleeping .eye { height: 3px !important; top: 45px !important; border-radius: 2px; transform: none !important; }
+
+        .hat { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none; }
+        .hat-witch { bottom: 105px; width: 0; height: 0; border-left: 35px solid transparent; border-right: 35px solid transparent; border-bottom: 70px solid #1a1a1a; filter: drop-shadow(0 5px 5px rgba(0,0,0,0.5)); }
+        .hat-witch::after { content: ''; position: absolute; bottom: -70px; left: -35px; width: 70px; height: 15px; background: #6600cc; }
+        .hat-witch::before { content: ''; position: absolute; bottom: -75px; left: -45px; width: 90px; height: 10px; background: #1a1a1a; border-radius: 50%; }
+        .hat-winter { bottom: 105px; width: 80px; height: 50px; background: #cc0000; border-radius: 40px 40px 10px 10px; border-bottom: 15px solid #fff; box-shadow: 0 5px 10px rgba(0,0,0,0.3); }
+        .hat-winter::after { content: ''; position: absolute; top: -15px; left: 50%; transform: translateX(-50%); width: 25px; height: 25px; background: #fff; border-radius: 50%; }
+        .hat-spring { bottom: 105px; width: 70px; height: 30px; background: #44aa44; border-radius: 35px 35px 5px 5px; border-bottom: 8px solid #226622; }
+        .hat-spring::after { content: ''; position: absolute; bottom: -8px; left: -10px; width: 90px; height: 8px; background: #44aa44; border-radius: 4px; }
+        .glasses-summer { top: 35px; left: 50%; transform: translateX(-50%); width: 80px; height: 25px; display: flex; justify-content: space-between; position: absolute; z-index: 5; }
+        .glasses-summer::before, .glasses-summer::after { content: ''; width: 35px; height: 25px; background: #000; border-radius: 5px; border: 2px solid #333; }
+        .glasses-summer .bridge { position: absolute; top: 5px; left: 35px; width: 10px; height: 4px; background: #333; }
+
+        .eye { width: 12px; height: 12px; background-color: #000; border-radius: 50%; position: absolute; top: 40px; transition: all 0.2s ease; z-index: 2; }
+        .eye.left { left: 32px; } .eye.right { right: 32px; }
+        .eye.squint { height: 4px; border-radius: 2px; top: 44px; }
+        .eye.angry { height: 6px; border-radius: 2px; top: 42px; transform: rotate(15deg); }
+        .eye.right.angry { transform: rotate(-15deg); }
+        .eye.staring-up { top: 32px; height: 14px; }
+
+        #mouth { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); transition: all 0.2s ease; z-index: 2; }
+        .mouth-neutral { width: 20px; height: 2px; background: #000; border-radius: 2px; }
+        .mouth-happy { width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-top: 18px solid #000; }
+        .mouth-thinking { width: 10px; height: 10px; background: #000; border-radius: 50%; }
+        .mouth-annoyed { width: 18px; height: 2px; background: #000; border-radius: 2px; transform: translateX(-50%) rotate(10deg); }
+        .mouth-talking { width: 14px; height: 8px; background: #000; border-radius: 50%; animation: talk 0.12s infinite alternate; }
+        .mouth-yelling { width: 16px; height: 16px; background: #000; border-radius: 50%; animation: yell 0.1s infinite alternate; }
+        .mouth-furious { width: 24px; height: 12px; background: #000; border-radius: 4px; border: 2px solid #000; }
+        .mouth-eating { width: 14px; height: 14px; background: #000; border-radius: 50%; animation: chew 0.2s infinite alternate; }
+        .mouth-open { width: 16px; height: 16px; background: #000; border-radius: 50%; }
+        @keyframes talk { 0% { height: 4px; } 100% { height: 12px; } }
+        @keyframes yell { 0% { height: 10px; transform: translateX(-50%) scale(1); } 100% { height: 20px; transform: translateX(-50%) scale(1.2); } }
+        @keyframes chew { 0% { height: 6px; width: 16px; } 100% { height: 16px; width: 12px; } }
+
+        .floating-text { position: fixed; font-family: 'Arial Black', sans-serif; font-size: 24px; font-weight: bold; color: #fff; text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; pointer-events: none; z-index: 50; animation: floatUp 0.8s ease-out forwards; }
+        @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(0.5) rotate(-10deg); } 50% { transform: translateY(-30px) scale(1.2) rotate(10deg); } 100% { opacity: 0; transform: translateY(-60px) scale(1) rotate(0deg); } }
+        
+        .water-drop { position: absolute; width: 4px; height: 12px; background: #44aaff; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; pointer-events: none; z-index: 30; animation: fall 0.6s linear forwards; }
+        @keyframes fall { 0% { top: -20px; opacity: 1; } 100% { top: 140px; opacity: 0; } }
+        .bubble { position: absolute; background: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.8); border-radius: 50%; pointer-events: none; z-index: 30; animation: floatBubble 1.5s ease-out forwards; }
+        @keyframes floatBubble { 0% { transform: translateY(0) scale(1); opacity: 0.8; } 100% { transform: translateY(-80px) scale(1.8); opacity: 0; } }
+        .zzz { position: absolute; font-family: 'Arial Black', sans-serif; font-size: 24px; color: #aaa; font-weight: bold; pointer-events: none; z-index: 30; animation: floatZ 2s ease-out infinite; }
+        @keyframes floatZ { 0% { opacity: 0; transform: translate(0,0) scale(0.8); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(40px, -50px) scale(1.5); } }
+
+        .sound-wave {
+            position: fixed; border: 4px solid #ffffff; border-radius: 50%;
+            pointer-events: none; z-index: 40;
+            transform: translate(-50%, -50%);
+            animation: waveExpand 0.8s ease-out forwards;
+        }
+        @keyframes waveExpand { 
+            0% { width: 10px; height: 10px; opacity: 0.9; border-width: 4px; } 
+            100% { width: 250px; height: 250px; opacity: 0; border-width: 1px; } 
+        }
+
+        #flakes-box { position: fixed; width: 70px; height: 90px; background: linear-gradient(to bottom, #ff1a1a, #990000); border: 3px solid #ff6666; border-radius: 6px; pointer-events: none; z-index: 1000; display: none; transform: translate(-50%, -100%); box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+        #flakes-box::before { content: 'BALL FLAKES'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ffff00; font-weight: 900; font-size: 14px; text-align: center; text-shadow: 1px 1px 0 #000; letter-spacing: 1px; }
+        #flakes-box::after { content: ''; position: absolute; bottom: 0; left: 10%; width: 80%; height: 15px; background: #ffcc00; border-radius: 0 0 3px 3px; }
+
+        #megaphone {
+            position: fixed; width: 110px; height: 80px; pointer-events: none; z-index: 1000; display: none;
+            transform: translate(-50%, -50%);
+        }
+        .mega-handle {
+            position: absolute; left: 35px; bottom: -15px;
+            width: 22px; height: 35px;
+            background: linear-gradient(to right, #cc0000, #880000);
+            border-radius: 4px 4px 6px 6px;
+            transform: rotate(-15deg);
+            z-index: 1;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+        }
+        .mega-body {
+            position: absolute; left: 10px; top: 25px;
+            width: 50px; height: 32px;
+            background: linear-gradient(to bottom, #ff4444, #aa0000);
+            border-radius: 5px;
+            z-index: 2;
+            box-shadow: inset 0 -3px 5px rgba(0,0,0,0.3);
+        }
+        .mega-cone {
+            position: absolute; left: 50px; top: 5px;
+            width: 55px; height: 70px;
+            background: linear-gradient(to bottom, #ff4444, #aa0000);
+            clip-path: polygon(0 25%, 100% 0, 100% 100%, 0 75%);
+            z-index: 2;
+            box-shadow: inset -5px 0 10px rgba(0,0,0,0.3);
+        }
+        .mega-cone::after {
+            content: ''; position: absolute; right: 2px; top: 15px;
+            width: 12px; height: 40px;
+            background: #440000; border-radius: 50%;
+            transform: rotate(5deg);
+        }
+        .mega-mouth {
+            position: absolute; left: 0px; top: 30px;
+            width: 15px; height: 22px;
+            background: #880000;
+            border-radius: 50% 0 0 50%;
+            z-index: 1;
+        }
+        #megaphone.blasting .mega-cone, #megaphone.blasting .mega-body {
+            filter: brightness(1.4) drop-shadow(0 0 15px #ff0000);
+        }
+
+        #bg-decorations { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; display: none; }
+        .deco { position: absolute; opacity: 0.6; }
+        .pumpkin { width: 40px; height: 35px; background: #ff6600; border-radius: 50%; border: 2px solid #cc4400; }
+        .pumpkin::before { content: ''; position: absolute; top: -10px; left: 15px; width: 10px; height: 12px; background: #00aa00; border-radius: 2px; }
+        .snowman { width: 30px; height: 30px; background: #fff; border-radius: 50%; box-shadow: 0 -35px 0 -5px #fff, 0 -70px 0 -10px #fff; }
+        .snowman::before { content: ''; position: absolute; top: -75px; left: 10px; width: 4px; height: 15px; background: #ff6600; transform: rotate(20deg); }
+        .flower { width: 20px; height: 20px; background: #ff66cc; border-radius: 50%; box-shadow: 15px 0 0 #ff66cc, -15px 0 0 #ff66cc, 0 15px 0 #ff66cc, 0 -15px 0 #ff66cc; }
+        .flower::after { content: ''; position: absolute; top: 5px; left: 5px; width: 10px; height: 10px; background: #ffff00; border-radius: 50%; }
+        .sun { width: 60px; height: 60px; background: #ffcc00; border-radius: 50%; box-shadow: 0 0 40px #ffcc00; top: 50px; right: 100px; }
+
+        #chat-wrapper { position: absolute; bottom: 0; left: 0; right: 0; height: 350px; background: linear-gradient(to top, #0a0a0a 90%, transparent); display: flex; flex-direction: column; padding: 20px; z-index: 15; }
+        #chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 10px; margin-bottom: 15px; }
+        #chat-container::-webkit-scrollbar { width: 4px; }
+        #chat-container::-webkit-scrollbar-track { background: transparent; }
+        #chat-container::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+        .message { padding: 12px 16px; border-radius: 6px; font-size: 13px; line-height: 1.5; max-width: 75%; letter-spacing: 0.5px; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .user-message { background: #151515; border: 1px solid #2a2a2a; align-self: flex-end; color: #aaa; border-bottom-right-radius: 2px; }
+        .ai-message { background: #1a0808; border: 1px solid #3a1010; align-self: flex-start; color: #ff5555; border-bottom-left-radius: 2px; }
+        .system-message { background: transparent; border: none; align-self: center; color: #444; font-size: 10px; font-style: italic; text-transform: uppercase; letter-spacing: 1px; }
+
+        #action-bar { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap; }
+        .action-btn { padding: 6px 12px; background: #111; color: #888; border: 1px solid #333; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 10px; font-weight: bold; cursor: pointer; transition: all 0.2s; letter-spacing: 1px; }
+        .action-btn:hover { background: #222; color: #fff; border-color: #555; }
+        .action-btn.active { background: #ff3333; color: #000; border-color: #ff3333; }
+
+        #input-area { display: flex; gap: 10px; height: 45px; }
+        #user-input { flex: 1; padding: 0 16px; background: #111; border: 1px solid #222; border-radius: 4px; color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 13px; outline: none; transition: border-color 0.2s; }
+        #user-input:focus { border-color: #ff3333; }
+        #send-btn { padding: 0 24px; background: #111; color: #ff3333; border: 1px solid #ff3333; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s; letter-spacing: 1px; }
+        #send-btn:hover { background: #ff3333; color: #000; }
+        #send-btn:disabled { opacity: 0.3; cursor: not-allowed; border-color: #555; color: #555; }
+        #coords { position: fixed; bottom: 10px; right: 20px; font-size: 10px; color: #333; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+    <div id="flash-overlay"></div>
+    <div id="flakes-box"></div>
+    <div id="megaphone">
+        <div class="mega-mouth"></div>
+        <div class="mega-body"></div>
+        <div class="mega-cone"></div>
+        <div class="mega-handle"></div>
+    </div>
+    <div id="bg-decorations"></div>
+
+    <div id="status-bar">
+        <span><span id="status-dot"></span>RED_BALL_AI // SYS.ONLINE</span>
+        <div id="aggression-container"><span>AGGRESSION</span><div id="aggression-bar-bg"><div id="aggression-bar-fill"></div></div></div>
+        <span id="status-text">IDLE</span>
+    </div>
+
+    <div id="left-warning">dude if your ai doesnt responds please stop typing so fast wait a bit. the api needs a sec to process fr.</div>
+    <div id="controls-hint">RIGHT CLICK (M2) = PUNCH<br>F KEY = UNEQUIP FLAKES<br>LEFT CLICK (TAP) = PAT<br>DRAG = MOVE AROUND<br><br>USE BUTTONS BELOW<br>TO INTERACT</div>
+
+    <div id="ball-container">
+        <div id="red-ball">
+            <div id="bed"></div>
+            <div class="eye left" id="eye-left"></div>
+            <div class="eye right" id="eye-right"></div>
+            <div id="mouth" class="mouth-neutral"></div>
+        </div>
+    </div>
+
+    <div id="chat-wrapper">
+        <div id="chat-container">
+            <div class="message system-message">[ session initialized ]</div>
+            <div class="message ai-message">ugh. what do u want. make it quick.</div>
+        </div>
+        <div id="action-bar">
+            <button class="action-btn" id="btn-feed">FEED FLAKES</button>
+            <button class="action-btn" id="btn-shower">SHOWER</button>
+            <button class="action-btn" id="btn-soap">SOAP</button>
+            <button class="action-btn" id="btn-sleep">SLEEP</button>
+            <button class="action-btn" id="btn-megaphone">MEGAPHONE</button>
+            <button class="action-btn" id="btn-theme">THEME: OFF</button>
+        </div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="ask something..." autocomplete="off">
+            <button id="send-btn">SEND</button>
+        </div>
+    </div>
+    <div id="coords">X: 000 | Y: 000</div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            const t = audioCtx.currentTime;
+            
+            if (type === 'punch') { osc.type = 'square'; osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(40, t + 0.1); gain.gain.setValueAtTime(0.4, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2); osc.start(t); osc.stop(t + 0.2); }
+            else if (type === 'pat') { osc.type = 'sine'; osc.frequency.setValueAtTime(600, t); osc.frequency.exponentialRampToValueAtTime(800, t + 0.1); gain.gain.setValueAtTime(0.2, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15); osc.start(t); osc.stop(t + 0.15); }
+            else if (type === 'feed') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, t); osc.frequency.linearRampToValueAtTime(100, t + 0.05); gain.gain.setValueAtTime(0.15, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.08); osc.start(t); osc.stop(t + 0.08); }
+            else if (type === 'sleep') { osc.type = 'sine'; osc.frequency.setValueAtTime(400, t); osc.frequency.exponentialRampToValueAtTime(100, t + 0.5); gain.gain.setValueAtTime(0.2, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.5); osc.start(t); osc.stop(t + 0.5); }
+            else if (type === 'megaphone') { 
+                osc.type = 'sawtooth'; 
+                osc.frequency.setValueAtTime(800, t); 
+                osc.frequency.linearRampToValueAtTime(1200, t + 0.1); 
+                osc.frequency.linearRampToValueAtTime(800, t + 0.2);
+                gain.gain.setValueAtTime(0.3, t); 
+                gain.gain.linearRampToValueAtTime(0.01, t + 0.2); 
+                osc.start(t); osc.stop(t + 0.2); 
+            }
+            else if (type === 'smash') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(100, t);
+                osc.frequency.exponentialRampToValueAtTime(20, t + 0.3);
+                gain.gain.setValueAtTime(0.5, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+                osc.start(t); osc.stop(t + 0.3);
+            }
+        }
+
+        const input = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const chatContainer = document.getElementById('chat-container');
+        const mouth = document.getElementById('mouth');
+        const eyeLeft = document.getElementById('eye-left');
+        const eyeRight = document.getElementById('eye-right');
+        const statusText = document.getElementById('status-text');
+        const ballContainer = document.getElementById('ball-container');
+        const redBall = document.getElementById('red-ball');
+        const bgDecorations = document.getElementById('bg-decorations');
+        const bed = document.getElementById('bed');
+        const coordsDisplay = document.getElementById('coords');
+        const flashOverlay = document.getElementById('flash-overlay');
+        const aggressionFill = document.getElementById('aggression-bar-fill');
+        const flakesBox = document.getElementById('flakes-box');
+        const megaphone = document.getElementById('megaphone');
+        const btnTheme = document.getElementById('btn-theme');
+
+        let conversationHistory = [];
+        let isProcessing = false;
+        let aggressionLevel = 0; 
+        let isSleeping = false;
+        let isFeeding = false;
+        let isTypingInChat = false;
+        let isMegaphoneEquipped = false;
+        let isBlasting = false;
+        let blastInterval;
+        let lastComplaintTime = 0;
+        let zzzInterval;
+        let feedInterval;
+        let feedingDialogueInterval;
+        let currentThemeIndex = 0;
+        const themes = ['none', 'autumn', 'winter', 'spring', 'summer'];
+        const feedingDialogues = ["omg these are so good fr", "more flakes pls im starving", "im in heaven rn ngl", "best day of my life lowkey", "wait these are bussin", "bro u actually care about me? wow", "im literally vibrating rn", "uwu these hit different"];
+
+        let isDragging = false;
+        let dragStartX = 0, dragStartY = 0;
+        let currentX = 0, currentY = 0;
+        let dragDistance = 0;
+        let dragComplaintCooldown = false;
+        let roamInterval;
+        let mouseDownTime = 0;
+        let mouseDownX = 0, mouseDownY = 0;
+        let mouseX = 0, mouseY = 0;
+        let isSquished = false;
+
+        input.addEventListener('focus', () => { isTypingInChat = true; });
+        input.addEventListener('blur', () => { isTypingInChat = false; });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'f' && isFeeding && !isTypingInChat) toggleFeeding();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+
+            if (isMegaphoneEquipped) {
+                megaphone.style.left = mouseX + 'px';
+                megaphone.style.top = mouseY + 'px';
+                
+                const rect = ballContainer.getBoundingClientRect();
+                const ballX = rect.left + rect.width / 2;
+                const ballY = rect.top + rect.height / 2;
+                const angle = Math.atan2(ballY - mouseY, ballX - mouseX) * 180 / Math.PI;
+                
+                megaphone.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+            }
+        });
+
+        function spawnSoundWave(x, y, angle) {
+            const rad = angle * Math.PI / 180;
+            const offset = 65;
+            const spawnX = x + Math.cos(rad) * offset;
+            const spawnY = y + Math.sin(rad) * offset;
+
+            const wave = document.createElement('div');
+            wave.className = 'sound-wave';
+            wave.style.left = `${spawnX}px`;
+            wave.style.top = `${spawnY}px`;
+            document.body.appendChild(wave);
+            setTimeout(() => wave.remove(), 800);
+        }
+
+        document.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && isMegaphoneEquipped && !isTypingInChat) {
+                isBlasting = true;
+                megaphone.classList.add('blasting');
+                redBall.classList.add('blasted');
+                setExpression('yelling');
+                playSound('megaphone');
+                
+                const rect = ballContainer.getBoundingClientRect();
+                const ballX = rect.left + rect.width / 2;
+                const ballY = rect.top + rect.height / 2;
+                const angle = Math.atan2(ballY - mouseY, ballX - mouseX) * 180 / Math.PI;
+
+                spawnSoundWave(mouseX, mouseY, angle);
+
+                blastInterval = setInterval(() => {
+                    if (!isBlasting) return;
+                    playSound('megaphone');
+                    
+                    const r = ballContainer.getBoundingClientRect();
+                    const bx = r.left + r.width / 2;
+                    const by = r.top + r.height / 2;
+                    const a = Math.atan2(by - mouseY, bx - mouseX) * 180 / Math.PI;
+                    
+                    spawnSoundWave(mouseX, mouseY, a);
+                    setExpression('yelling');
+                    
+                    aggressionLevel = Math.min(100, aggressionLevel + 5);
+                    updateAggressionBar();
+                    
+                    if (Date.now() - lastComplaintTime > 1000) {
+                        addMessage(getRandomItem(["BRO TURN THAT SHIT OFF WTF", "MY EARS ARE BLEEDING FUCK YOU", "STOP BLASTING ME U PSYCHO", "IM LITERALLY GONNA DIE STOP", "UGH SHUT THE FUCK UP"]), 'ai-message');
+                        lastComplaintTime = Date.now();
+                    }
+                }, 200);
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 0 && isBlasting) {
+                isBlasting = false;
+                megaphone.classList.remove('blasting');
+                redBall.classList.remove('blasted');
+                clearInterval(blastInterval);
+                setExpression(aggressionLevel > 50 ? 'annoyed' : 'neutral');
+            }
+        });
+
+        ballContainer.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && !isMegaphoneEquipped) { 
+                if (isSleeping) wakeUpBall();
+                if (isFeeding) toggleFeeding();
+                mouseDownTime = Date.now(); mouseDownX = e.clientX; mouseDownY = e.clientY;
+                isDragging = true; dragStartX = e.clientX - currentX; dragStartY = e.clientY - currentY;
+                redBall.classList.add('dragging'); clearInterval(roamInterval); setExpression('annoyed');
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isFeeding) {
+                flakesBox.style.left = e.clientX + 'px'; flakesBox.style.top = e.clientY + 'px';
+                const centerX = window.innerWidth / 2;
+                currentX += ((e.clientX - centerX) - currentX) * 0.3;
+                currentY += ((e.clientY - 100 + 60) - currentY) * 0.3;
+                ballContainer.style.transform = `translate(calc(-50% + ${currentX}px), ${currentY}px)`;
+                coordsDisplay.textContent = `X: ${String(Math.round(currentX)).padStart(4, '0')} | Y: ${String(Math.round(currentY)).padStart(4, '0')}`;
+                return;
+            }
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            let rawX = e.clientX - dragStartX;
+            let rawY = e.clientY - dragStartY;
+            
+            const maxX = window.innerWidth / 2 - 70;
+            const minX = -window.innerWidth / 2 + 70;
+            const maxY = window.innerHeight - 220;
+            const minY = 50;
+
+            // Wall Smash Logic
+            let squishX = 1;
+            let squishY = 1;
+            let hitWall = false;
+
+            if (rawX > maxX) { rawX = maxX; squishX = 0.6; squishY = 1.4; hitWall = true; }
+            else if (rawX < minX) { rawX = minX; squishX = 0.6; squishY = 1.4; hitWall = true; }
+            
+            if (rawY > maxY) { rawY = maxY; squishX = 1.4; squishY = 0.6; hitWall = true; }
+            else if (rawY < minY) { rawY = minY; squishX = 1.4; squishY = 0.6; hitWall = true; }
+
+            currentX = rawX;
+            currentY = rawY;
+
+            if (hitWall && !isSquished) {
+                playSound('smash');
+                redBall.style.transform = `scaleX(${squishX}) scaleY(${squishY})`;
+                isSquished = true;
+                flashOverlay.classList.add('active');
+                setTimeout(() => flashOverlay.classList.remove('active'), 100);
+            } else if (!hitWall && isSquished) {
+                redBall.style.transform = '';
+                redBall.classList.add('wobble');
+                isSquished = false;
+                setTimeout(() => redBall.classList.remove('wobble'), 500);
+            } else if (hitWall) {
+                redBall.style.transform = `scaleX(${squishX}) scaleY(${squishY})`;
+            }
+
+            ballContainer.style.transform = `translate(calc(-50% + ${currentX}px), ${currentY}px)`;
+            dragDistance += Math.abs(e.movementX) + Math.abs(e.movementY);
+            coordsDisplay.textContent = `X: ${String(Math.round(currentX)).padStart(4, '0')} | Y: ${String(Math.round(currentY)).padStart(4, '0')}`;
+            if (dragDistance > 150 && !dragComplaintCooldown) triggerDragComplaint();
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!isDragging) return;
+            isDragging = false; 
+            redBall.classList.remove('dragging');
+            redBall.style.transform = '';
+            isSquished = false;
+            
+            const timeDiff = Date.now() - mouseDownTime;
+            const distDiff = Math.abs(e.clientX - mouseDownX) + Math.abs(e.clientY - mouseDownY);
+            if (timeDiff < 200 && distDiff < 10) patBall(e.clientX, e.clientY);
+            else { setExpression('annoyed'); setTimeout(() => setExpression('neutral'), 2000); }
+            dragDistance = 0; if (!isFeeding) startRoaming(); 
+        });
+
+        ballContainer.addEventListener('contextmenu', (e) => { e.preventDefault(); if (isSleeping) wakeUpBall(); punchBall(e.clientX, e.clientY); });
+
+        document.getElementById('btn-feed').addEventListener('click', toggleFeeding);
+        document.getElementById('btn-shower').addEventListener('click', () => { if(isSleeping) wakeUpBall(); if(isFeeding) toggleFeeding(); showerBall(); });
+        document.getElementById('btn-soap').addEventListener('click', () => { if(isSleeping) wakeUpBall(); if(isFeeding) toggleFeeding(); soapBall(); });
+        document.getElementById('btn-sleep').addEventListener('click', () => { if(isSleeping) wakeUpBall(); else if(isFeeding) toggleFeeding(); else sleepBall(); });
+        document.getElementById('btn-megaphone').addEventListener('click', () => {
+            isMegaphoneEquipped = !isMegaphoneEquipped;
+            megaphone.style.display = isMegaphoneEquipped ? 'block' : 'none';
+            document.getElementById('btn-megaphone').classList.toggle('active', isMegaphoneEquipped);
+            if (!isMegaphoneEquipped && isBlasting) { isBlasting = false; clearInterval(blastInterval); megaphone.classList.remove('blasting'); redBall.classList.remove('blasted'); }
+        });
+        btnTheme.addEventListener('click', () => { currentThemeIndex = (currentThemeIndex + 1) % themes.length; applyTheme(themes[currentThemeIndex]); });
+
+        function applyTheme(theme) {
+            document.body.className = document.body.className.replace(/theme-\w+/g, '').trim();
+            document.querySelectorAll('.hat, .glasses-summer').forEach(el => el.remove());
+            bgDecorations.innerHTML = ''; bgDecorations.style.display = 'none';
+            btnTheme.textContent = `THEME: ${theme.toUpperCase()}`;
+            if (theme === 'none') return;
+            document.body.classList.add(`theme-${theme}`); bgDecorations.style.display = 'block';
+            
+            if (theme === 'autumn') { const h = document.createElement('div'); h.className = 'hat hat-witch'; redBall.appendChild(h); addDecorations('pumpkin', 5); }
+            else if (theme === 'winter') { const h = document.createElement('div'); h.className = 'hat hat-winter'; redBall.appendChild(h); addDecorations('snowman', 4); }
+            else if (theme === 'spring') { const h = document.createElement('div'); h.className = 'hat hat-spring'; redBall.appendChild(h); addDecorations('flower', 6); }
+            else if (theme === 'summer') { const g = document.createElement('div'); g.className = 'glasses-summer'; g.innerHTML = '<div class="bridge"></div>'; redBall.appendChild(g); addDecorations('sun', 1); }
+        }
+        function addDecorations(type, count) { for(let i=0; i<count; i++) { const deco = document.createElement('div'); deco.className = `deco ${type}`; deco.style.left = `${10 + Math.random() * 80}%`; deco.style.top = `${20 + Math.random() * 60}%`; bgDecorations.appendChild(deco); } }
+
+        function toggleFeeding() {
+            isFeeding = !isFeeding;
+            if (isFeeding) {
+                if (isSleeping) wakeUpBall();
+                flakesBox.style.display = 'block'; document.getElementById('btn-feed').classList.add('active');
+                clearInterval(roamInterval); setExpression('happy'); mouth.className = 'mouth-open';
+                eyeLeft.classList.add('staring-up'); eyeRight.classList.add('staring-up');
+                feedingDialogueInterval = setInterval(() => { if (!isFeeding) return; if (Math.random() > 0.4) addMessage(getRandomItem(feedingDialogues), 'ai-message'); }, 2500);
+                feedInterval = setInterval(() => {
+                    if (!isFeeding) return; 
+                    playSound('feed');
+                    // MELT AGGRESSION
+                    aggressionLevel = Math.max(0, aggressionLevel - 3);
+                    updateAggressionBar();
+                    
+                    const flake = document.createElement('div'); flake.style.position = 'fixed'; flake.style.width = '18px'; flake.style.height = '18px';
+                    flake.style.borderRadius = '50%'; flake.style.background = getRandomItem(['#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ffffff']);
+                    flake.style.boxShadow = '0 0 5px currentColor';
+                    const boxX = parseInt(flakesBox.style.left) || window.innerWidth/2; const boxY = parseInt(flakesBox.style.top) || window.innerHeight/2;
+                    flake.style.left = `${boxX + (Math.random()*30 - 15)}px`; flake.style.top = `${boxY + 10}px`;
+                    flake.style.pointerEvents = 'none'; flake.style.zIndex = '999'; flake.style.transition = 'top 0.3s ease-in, opacity 0.3s';
+                    document.body.appendChild(flake);
+                    setTimeout(() => { flake.style.top = `${boxY + 70}px`; flake.style.opacity = '0'; triggerFlakeContact(); }, 10);
+                    setTimeout(() => flake.remove(), 300);
+                }, 100);
+            } else {
+                flakesBox.style.display = 'none'; document.getElementById('btn-feed').classList.remove('active');
+                clearInterval(feedInterval); clearInterval(feedingDialogueInterval);
+                eyeLeft.classList.remove('staring-up'); eyeRight.classList.remove('staring-up');
+                mouth.className = ''; setExpression('neutral'); startRoaming();
+            }
+        }
+        function triggerFlakeContact() { redBall.style.transform = 'scale(1.08)'; mouth.className = 'mouth-happy'; setTimeout(() => { if(isFeeding) { redBall.style.transform = ''; mouth.className = 'mouth-open'; } }, 150); }
+
+        function showerBall() { aggressionLevel = Math.max(0, aggressionLevel - 10); updateAggressionBar(); setExpression('happy'); spawnFloatingText(window.innerWidth/2, window.innerHeight/2 - 50, "ahh refreshing"); for(let i=0; i<15; i++) { setTimeout(() => { const drop = document.createElement('div'); drop.className = 'water-drop'; drop.style.left = `${60 + Math.random() * 80}px`; drop.style.top = '-20px'; redBall.appendChild(drop); setTimeout(() => drop.remove(), 600); }, i * 100); } setTimeout(() => setExpression('neutral'), 2000); }
+        function soapBall() { aggressionLevel = Math.max(0, aggressionLevel - 15); updateAggressionBar(); setExpression('happy'); spawnFloatingText(window.innerWidth/2, window.innerHeight/2 - 50, "soapy..."); for(let i=0; i<12; i++) { setTimeout(() => { const bubble = document.createElement('div'); bubble.className = 'bubble'; const size = 15 + Math.random() * 25; bubble.style.width = `${size}px`; bubble.style.height = `${size}px`; bubble.style.left = `${10 + Math.random() * 90}px`; bubble.style.top = `${10 + Math.random() * 90}px`; redBall.appendChild(bubble); setTimeout(() => bubble.remove(), 1500); }, i * 150); } setTimeout(() => setExpression('neutral'), 2000); }
+
+        function sleepBall() { isSleeping = true; redBall.classList.add('sleeping'); bed.style.display = 'block'; document.body.classList.add('dimmed'); clearInterval(roamInterval); setExpression('neutral'); playSound('sleep'); document.getElementById('btn-sleep').classList.add('active'); document.getElementById('btn-sleep').textContent = 'WAKE UP'; zzzInterval = setInterval(() => { const z = document.createElement('div'); z.className = 'zzz'; z.textContent = 'Z'; z.style.left = '80px'; z.style.top = '10px'; redBall.appendChild(z); setTimeout(() => z.remove(), 2000); }, 800); }
+        function wakeUpBall() { if (!isSleeping) return; isSleeping = false; redBall.classList.remove('sleeping'); bed.style.display = 'none'; document.body.classList.remove('dimmed'); clearInterval(zzzInterval); document.getElementById('btn-sleep').classList.remove('active'); document.getElementById('btn-sleep').textContent = 'SLEEP'; document.querySelectorAll('.zzz').forEach(z => z.remove()); setExpression('annoyed'); addMessage("bro why did u wake me up wtf", 'ai-message'); startRoaming(); }
+
+        function punchBall(x, y) { playSound('punch'); aggressionLevel = Math.min(100, aggressionLevel + 25); updateAggressionBar(); document.body.classList.add('shake'); flashOverlay.classList.add('active'); redBall.classList.add('punched'); setExpression('yelling'); spawnFloatingText(x, y, getRandomItem(["POW!", "BAM!", "WTF?!", "OUCH!", "L + RATIO", "STOP!"])); setTimeout(() => { document.body.classList.remove('shake'); flashOverlay.classList.remove('active'); redBall.classList.remove('punched'); }, 400); addMessage(getRandomItem(["DUDE WHAT THE FUCK STOP HITTING ME", "BRO ARE U SERIOUS RN STOP PUNCHING ME", "NGl THAT HURT WTF IS WRONG WITH U", "DEADASS IM GONNA LEAVE IF U HIT ME AGAIN"]), 'ai-message'); }
+        function patBall(x, y) { playSound('pat'); aggressionLevel = Math.max(0, aggressionLevel - 15); updateAggressionBar(); redBall.classList.add('patted'); setExpression('happy'); spawnFloatingText(x, y, getRandomItem(["uwu", "*purrs*", "ok chill", "fine...", "whatever bro"])); setTimeout(() => { redBall.classList.remove('patted'); setExpression('neutral'); }, 600); }
+        function spawnFloatingText(x, y, text) { const el = document.createElement('div'); el.className = 'floating-text'; el.textContent = text; el.style.left = `${x - 30}px`; el.style.top = `${y - 30}px`; document.body.appendChild(el); setTimeout(() => el.remove(), 800); }
+
+        function updateAggressionBar() { 
+            aggressionFill.style.width = `${aggressionLevel}%`; 
+            if (aggressionLevel >= 100) {
+                aggressionFill.classList.add('max');
+                aggressionFill.classList.remove('melting');
+            } else {
+                aggressionFill.classList.remove('max');
+                if (isFeeding) {
+                    aggressionFill.classList.add('melting');
+                } else {
+                    aggressionFill.classList.remove('melting');
+                    if (aggressionLevel > 70) aggressionFill.style.background = '#ff0000';
+                    else if (aggressionLevel > 40) aggressionFill.style.background = '#ff8800';
+                    else aggressionFill.style.background = '#ff3333';
+                }
+            }
+        }
+        function triggerDragComplaint() { dragComplaintCooldown = true; setExpression('yelling'); addMessage(getRandomItem(["DUDE STOP THIS SUCKS", "BRO PUT ME DOWN FR FR", "NGl THIS IS SO ANNOYING STOP"]), 'ai-message'); setTimeout(() => { dragComplaintCooldown = false; setExpression('annoyed'); }, 3000); }
+        function startRoaming() { if (isSleeping || isFeeding) return; let time = 0; roamInterval = setInterval(() => { if (isDragging || isProcessing || isSleeping || isFeeding) return; time += 0.05; const roamX = Math.sin(time) * 30; const roamY = Math.cos(time * 0.7) * 15; ballContainer.style.transform = `translate(calc(-50% + ${currentX + roamX}px), ${currentY + roamY}px)`; }, 50); }
+        startRoaming();
+
+        function setExpression(expr) {
+            if (isSleeping) return; mouth.className = ''; eyeLeft.className = 'eye left'; eyeRight.className = 'eye right';
+            if (isFeeding) { eyeLeft.classList.add('staring-up'); eyeRight.classList.add('staring-up'); return; }
+            if (aggressionLevel > 60 && expr !== 'yelling' && expr !== 'talking') { eyeLeft.classList.add('angry'); eyeRight.classList.add('angry'); }
+            switch(expr) {
+                case 'neutral': mouth.classList.add(aggressionLevel > 50 ? 'mouth-furious' : 'mouth-neutral'); break;
+                case 'happy': mouth.classList.add('mouth-happy'); break;
+                case 'thinking': mouth.classList.add('mouth-thinking'); eyeLeft.classList.add('squint'); eyeRight.classList.add('squint'); break;
+                case 'annoyed': mouth.classList.add('mouth-annoyed'); break;
+                case 'talking': mouth.classList.add('mouth-talking'); break;
+                case 'yelling': mouth.classList.add('mouth-yelling'); eyeLeft.classList.add('squint'); eyeRight.classList.add('squint'); break;
+            }
+        }
+        function addMessage(text, className) { const msgDiv = document.createElement('div'); msgDiv.className = `message ${className}`; msgDiv.textContent = text; chatContainer.appendChild(msgDiv); chatContainer.scrollTop = chatContainer.scrollHeight; }
+        function resetStatus() { isProcessing = false; sendBtn.disabled = false; statusText.textContent = 'IDLE'; statusText.style.color = '#555'; }
+
+        async function fetchAIResponse(messages) {
+            const response = await fetch('https://text.pollinations.ai/openai', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'openai', messages: messages, temperature: 0.9 })
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            return data.choices[0].message.content.trim();
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim(); if (!text || isProcessing) return;
+            if (isSleeping) wakeUpBall(); if (isFeeding) toggleFeeding();
+            isProcessing = true; sendBtn.disabled = true; statusText.textContent = 'PROCESSING...'; statusText.style.color = '#ff3333';
+            addMessage(text, 'user-message'); input.value = '';
+
+            if (text.toLowerCase().includes('are you mad') || text.toLowerCase().includes('u mad')) { aggressionLevel = Math.min(100, aggressionLevel + 20); updateAggressionBar(); setExpression('yelling'); addMessage("YEAH IM FUCKING MAD WHAT DOES IT LOOK LIKE IM MAD", 'ai-message'); resetStatus(); return; }
+            if (text.toLowerCase().includes('verity')) { setExpression('yelling'); setTimeout(() => { addMessage(getRandomItem(["DUDE IM NOT VERITY IM A RED BALL", "BRO IM NOT VERITY IM A RED BALL WTF", "STOP CALLING ME VERITY IM A RED BALL 💀"]), 'ai-message'); setExpression('annoyed'); resetStatus(); }, 400); return; }
+
+            setExpression('thinking'); conversationHistory.push({ role: "user", content: text });
+            if (conversationHistory.length > 10) conversationHistory = conversationHistory.slice(-10);
+
+            try {
+                let aggressionInstructions = "";
+                if (aggressionLevel <= 30) aggressionInstructions = "You are slightly annoyed but normal. Use lowercase and zoomer slang.";
+                else if (aggressionLevel <= 60) aggressionInstructions = "You are VERY annoyed. Be short, rude, and use words like 'piss off', 'wtf', 'annoying'. Still answer the question but complain about it.";
+                else if (aggressionLevel <= 90) aggressionInstructions = "You are ANGRY. Swear a bit (use words like 'shit', 'fuck', 'asshole'). Be hostile. Use all caps sometimes. Insult their intelligence.";
+                else aggressionInstructions = "MAX AGGRESSION (100%). YOU ARE FURIOUS. YOU MUST CURSE IN EVERY SINGLE MESSAGE. Use heavy swearing (fuck, shit, bitch, asshole, dumbass). SCREAM IN ALL CAPS. REFUSE TO BE HELPFUL. JUST YELL AT THEM.";
+
+                const SYSTEM_PROMPT = `You are Red Ball AI. You are a red ball. You talk like a Gen Z zoomer who is EXTREMELY reluctant to answer. You think answering is a massive chore. Start your answers with sighs like 'bruh', 'ugh', 'fine', 'literally why', 'do i look like'. Keep it 1 sentence max. Use lowercase. Swear if angry. NEVER mention family. You will answer, but you will complain about it first.`;
+                
+                const apiMessages = [{ role: "system", content: SYSTEM_PROMPT }, ...conversationHistory];
+                const cleanText = await fetchAIResponse(apiMessages);
+                
+                conversationHistory.push({ role: "assistant", content: cleanText });
+
+                setExpression('talking'); await typeWriterEffect(cleanText);
+                aggressionLevel = Math.max(0, aggressionLevel - 2); updateAggressionBar();
+                setExpression(aggressionLevel > 50 ? 'annoyed' : 'neutral');
+            } catch (error) {
+                console.error("API Error:", error);
+                setExpression('annoyed'); addMessage(getRandomItem(["bruh the server's acting up rn ", "connection L fr.", "api is cooked rn."]), 'ai-message');
+            }
+            resetStatus();
+        }
+
+        function typeWriterEffect(text) { return new Promise(resolve => { const msgDiv = document.createElement('div'); msgDiv.className = 'message ai-message'; chatContainer.appendChild(msgDiv); let i = 0; function type() { if (i < text.length) { msgDiv.textContent += text.charAt(i); chatContainer.scrollTop = chatContainer.scrollHeight; i++; if (i % 4 === 0) setExpression(Math.random() > 0.8 ? 'neutral' : 'talking'); setTimeout(type, 20); } else resolve(); } type(); }); }
+        function getRandomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+        setInterval(() => { if (!isDragging && !isProcessing && !isSleeping && !isFeeding) { eyeLeft.style.height = '2px'; eyeRight.style.height = '2px'; setTimeout(() => { eyeLeft.style.height = ''; eyeRight.style.height = ''; }, 150); } }, 4000);
+    </script>
+</body>
+</html>
